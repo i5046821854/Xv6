@@ -124,6 +124,9 @@ int             thread_create(void*(*)(void*), void*, void*);
 int             thread_join(int, void**);
 int             thread_exit(void*);
 int             gettid(void);
+int		getnice(int);
+void 		setnice(int, int);
+void 		yield2(void);
 
 // swtch.S
 void            swtch(struct context**, struct context*);

@@ -7,6 +7,7 @@
 #include "proc.h"
 #include "spinlock.h"
 
+int round = 0;
 typedef long Align;
 
 union header {
@@ -129,7 +130,8 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-
+  p->RR = round++;
+  p->nice = 20;
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -227,7 +229,7 @@ fork(void)
   if((np = allocproc()) == 0){
     return -1;
   }
-
+  
   // Copy process state from proc.
   if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
     kfree(np->kstack);
@@ -238,7 +240,8 @@ fork(void)
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
-
+  np->nice = curproc->nice;
+  
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
 
@@ -252,9 +255,7 @@ fork(void)
   pid = np->pid;
 
   acquire(&ptable.lock);
-
   np->state = RUNNABLE;
-
   release(&ptable.lock);
 
   return pid;
@@ -376,7 +377,7 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+  int min;
   for(;;){
     // Enable interrupts on this processor.
     sti();
@@ -386,7 +387,17 @@ scheduler(void)
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
+      min = p->nice;
+      for(struct proc * temp = ptable.proc; temp < &ptable.proc[NPROC]; temp++){
+        if(temp->state != RUNNABLE)
+          continue;
+        if(temp->nice < min || ((temp->nice == min) && (temp->RR < p->RR)) )
+        {
+	   p = temp;
+           min = temp->nice;
 
+        }
+      }
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
@@ -402,8 +413,7 @@ scheduler(void)
       c->proc = 0;
     }
     release(&ptable.lock);
-
-  }
+    }
 }
 
 // Enter scheduler.  Must hold only ptable.lock
@@ -448,6 +458,7 @@ void
 forkret(void)
 {
   static int first = 1;
+  
   // Still holding ptable.lock from scheduler.
   release(&ptable.lock);
 
@@ -587,6 +598,15 @@ procdump(void)
   }
 }
 
+void
+yield2(void)
+{
+  myproc()->RR = round++;
+  acquire(&ptable.lock);  
+  myproc()->state = RUNNABLE;
+  sched();
+  release(&ptable.lock);
+}
 
 int thread_create(void*(*function)(void*), void* arg, void* stack)
 {
@@ -622,6 +642,37 @@ int thread_create(void*(*function)(void*), void* arg, void* stack)
   return threadId;
 }
 
+int getnice(int pid)
+{
+	struct proc *t;
+	for(t = ptable.proc; t < &ptable.proc[NPROC]; t++)
+	{
+		if(t->pid != pid)
+			continue;
+		else{
+			return t->nice;
+			break;
+		}
+	}
+	return 0;
+}
+
+
+void setnice(int pid, int nice)
+{
+	struct proc *t;
+	for(t = ptable.proc; t < &ptable.proc[NPROC]; t++)
+	{
+		if(t->pid != pid)
+			continue;
+		else{
+			t->state = RUNNABLE;
+			t->nice = nice;
+			break;
+		}
+	}
+	yield2();
+}
 
 int thread_join(int tid, void** retval)
 {
@@ -663,13 +714,10 @@ int thread_join(int tid, void** retval)
 
 int thread_exit(void* retval)
 {
-	//cprintf("exit executed//");
         struct proc *curproc = myproc();
         int fd;
 	for(fd=0 ; fd < NOFILE; fd++)
 	{
-		/*if(curproc->ofile[fd])
-			fileclose(curproc->ofile[fd]);*/
 	 	curproc->ofile[fd] = 0;
 		continue;
 	}
