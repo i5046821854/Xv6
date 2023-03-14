@@ -8,9 +8,7 @@ thread_join()
 gettid()
 
 PA2
-- implement priority-based scheduler
-,which is running when a process is exiting, sleeping, or yieding resource,
-based on nice value (use round-robin when tied)
+- implement priority-based scheduler, which is running when a process is exiting, sleeping, or yieding resource, based on nice value (use round-robin when tied)
 
 PA3 
 - implement lazy allocation
